@@ -448,22 +448,20 @@ func convertLinuxProfileToV20170701(api *LinuxProfile, v20170701Profile *v201707
 	}
 }
 
-func convertLinuxProfileToVLabs(api *LinuxProfile, vlabsProfile *vlabs.LinuxProfile) {
-	vlabsProfile.AdminUsername = api.AdminUsername
-	vlabsProfile.SSH.PublicKeys = []struct {
-		KeyData string `json:"keyData"`
-	}{}
-	for _, d := range api.SSH.PublicKeys {
-		vlabsProfile.SSH.PublicKeys = append(vlabsProfile.SSH.PublicKeys, d)
+func convertLinuxProfileToVLabs(obj *LinuxProfile, vlabsProfile *vlabs.LinuxProfile) {
+	vlabsProfile.AdminUsername = obj.AdminUsername
+	vlabsProfile.SSH.PublicKeys = []vlabs.PublicKey{}
+	for _, d := range obj.SSH.PublicKeys {
+		vlabsProfile.SSH.PublicKeys = append(vlabsProfile.SSH.PublicKeys,
+			vlabs.PublicKey{KeyData: d.KeyData})
 	}
 	vlabsProfile.Secrets = []vlabs.KeyVaultSecrets{}
-	for _, s := range api.Secrets {
+	for _, s := range obj.Secrets {
 		secret := &vlabs.KeyVaultSecrets{}
 		convertKeyVaultSecretsToVlabs(&s, secret)
 		vlabsProfile.Secrets = append(vlabsProfile.Secrets, *secret)
 	}
 }
-
 func convertWindowsProfileToV20160930(api *WindowsProfile, v20160930 *v20160930.WindowsProfile) {
 	v20160930.AdminUsername = api.AdminUsername
 	v20160930.AdminPassword = api.AdminPassword

@@ -15,7 +15,6 @@ import (
 
 	"github.com/Azure/acs-engine/pkg/api"
 	"github.com/ghodss/yaml"
-	"os"
 )
 
 const (
@@ -228,25 +227,6 @@ func (t *TemplateGenerator) GenerateTemplate(containerService *api.ContainerServ
 	if e != nil {
 		return "", "", false, e
 	}
-
-	fmt.Println(containerService)
-	os.Exit(1)
-
-	// ----------------------
-	//agentoutputs.t
-	//agentparams.t
-	//classicparams.t
-	//masteroutputs.t
-	//masterparams.t
-	//windowsparams.t
-	//kubernetesbase.t
-	//kubernetesagentresourcesvmas.t
-	//kubernetesagentvars.t
-	//kubernetesmasterresources.t
-	//kubernetesmastervars.t
-	//kubernetesparams.t
-	//kuberneteswinagentresourcesvmas.t
-	// ----------------------
 
 	for _, file := range files {
 		bytes, e := Asset(file)
@@ -490,12 +470,16 @@ func getParameters(cs *api.ContainerService, isClassicMode bool) (map[string]int
 	return parametersMap, nil
 }
 
+func AddValue(m map[string]interface{}, k string, v interface{}) { addValue(m, k, v) }
 func addValue(m map[string]interface{}, k string, v interface{}) {
 	m[k] = map[string]interface{}{
 		"value": v,
 	}
 }
 
+func AddSecret(m map[string]interface{}, k string, v interface{}, encode bool) {
+	addSecret(m, k, v, encode)
+}
 func addSecret(m map[string]interface{}, k string, v interface{}, encode bool) {
 	str, ok := v.(string)
 	if !ok {
@@ -551,6 +535,12 @@ func VersionOrdinal(version api.OrchestratorVersion) string {
 		vo[j]++
 	}
 	return string(vo)
+}
+
+// Exported wrapper for getTemplateFuncMap
+func GetTemplateFuncMap(cs *api.ContainerService) map[string]interface{} {
+	t := &TemplateGenerator{true}
+	return t.getTemplateFuncMap(cs)
 }
 
 // getTemplateFuncMap returns all functions used in template generation
@@ -851,7 +841,7 @@ func (t *TemplateGenerator) getTemplateFuncMap(cs *api.ContainerService) map[str
 				case "cloudProviderBackoffRetries":
 					val = KubeImages[kubernetesVersion]["backoffretries"]
 				case "cloudProviderBackoffExponent":
-					val =  KubeImages[kubernetesVersion]["backoffexponent"]
+					val = KubeImages[kubernetesVersion]["backoffexponent"]
 				case "cloudProviderBackoffDuration":
 					val = KubeImages[kubernetesVersion]["backoffduration"]
 				case "cloudProviderBackoffJitter":
