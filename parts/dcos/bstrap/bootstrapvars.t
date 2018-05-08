@@ -34,4 +34,18 @@
     "bootstrapFirstAddrOctets": "[split(parameters('bootstrapFirstConsecutiveStaticIP'),'.')]",
     "bootstrapFirstAddrOctet4": "[variables('bootstrapFirstAddrOctets')[3]]",
     "bootstrapFirstAddrPrefix": "[concat(variables('bootstrapFirstAddrOctets')[0],'.',variables('bootstrapFirstAddrOctets')[1],'.',variables('bootstrapFirstAddrOctets')[2],'.')]"
+{{if .HasWindows}}
+    ,
+    "bootstrapWinAvailabilitySet": "[concat('bootstrap-win-availabilitySet-', variables('nameSuffix'))]",
+    "bootstrapWinEndpointDNSNamePrefix": "[concat('win', variables('bootstrapEndpointDNSNamePrefix'))]",
+    "bootstrapWinLbBackendPoolName": "[concat('bootstrap-win-pool-', variables('nameSuffix'))]",
+    "bootstrapWinLbIPConfigName": "[concat('bootstrap-win-lbFrontEnd-', variables('nameSuffix'))]",
+    "bootstrapWinLbIPConfigID": "[concat(variables('bootstrapWinLbID'),'/frontendIPConfigurations/', variables('bootstrapWinLbIPConfigName'))]",
+    "bootstrapWinLbName": "[concat('bootstrap-win-lb-', variables('nameSuffix'))]",
+    "bootstrapWinLbID": "[resourceId('Microsoft.Network/loadBalancers',variables('bootstrapWinLbName'))]",
+    "bootstrapWinPublicIPAddressName": "[concat('bootstrap-ip-', variables('bootstrapWinEndpointDNSNamePrefix'), '-', variables('nameSuffix'))]",
+    "bootstrapWinNSGName": "[concat('bootstrap-win-nsg-', variables('nameSuffix'))]",
+    "bootstrapWinNSGID": "[resourceId('Microsoft.Network/networkSecurityGroups',variables('bootstrapWinNSGName'))]",
+    "bootstrapWinVMNamePrefix": "[concat('bootstrap-win-', variables('nameSuffix'), '-')]"
+{{end}}
 {{end}}
