@@ -8,6 +8,7 @@ func TestValidateVNET(t *testing.T) {
 
 	serviceCidr := "10.0.0.0/16"
 	serviceCidrBad := "10.0.0.0"
+	serviceCidrTooLarge := "10.0.0.0/11"
 	dNSServiceIP := "10.0.0.10"
 	dNSServiceIPBad := "10.0.0.257"
 	dNSServiceIPOutOfRange := "10.1.0.1"
@@ -179,6 +180,34 @@ func TestValidateVNET(t *testing.T) {
 
 	if err := validateVNET(a); err != ErrorInvalidServiceCidr {
 		t.Errorf("Failed to throw error, %s", ErrorInvalidServiceCidr)
+	}
+
+	// NetworkPlugin = Azure, serviceCidr too large
+	n = &NetworkProfile{
+		NetworkPlugin:    NetworkPlugin("azure"),
+		ServiceCidr:      serviceCidrTooLarge,
+		DNSServiceIP:     dNSServiceIP,
+		DockerBridgeCidr: dockerBridgeCidr,
+	}
+
+	p = []*AgentPoolProfile{
+		{
+			VnetSubnetID: vnetSubnetID1,
+			MaxPods:      &maxPods1,
+		},
+		{
+			VnetSubnetID: vnetSubnetID2,
+			MaxPods:      &maxPods2,
+		},
+	}
+
+	a = &Properties{
+		NetworkProfile:    n,
+		AgentPoolProfiles: p,
+	}
+
+	if err := validateVNET(a); err != ErrorServiceCidrTooLarge {
+		t.Errorf("Failed to throw error, %s", ErrorServiceCidrTooLarge)
 	}
 
 	// NetworkPlugin = Azure, bad dNSServiceIP
@@ -458,5 +487,64 @@ func TestValidateVNET(t *testing.T) {
 
 	if err := validateVNET(a); err != ErrorVnetNotMatch {
 		t.Errorf("Failed to validate VNET: %s", ErrorVnetNotMatch)
+	}
+}
+
+func TestValidateAADProfile(t *testing.T) {
+	mc := ManagedCluster{}
+	mc.Properties = &Properties{}
+	mc.Properties.EnableRBAC = nil
+	mc.Properties.AADProfile = &AADProfile{
+		ServerAppID: "ccbfaea3-7312-497e-81d9-9ad9b8a99853",
+	}
+	if err := mc.Properties.AADProfile.Validate(mc.Properties.EnableRBAC); err != ErrorRBACNotEnabledForAAD {
+		t.Errorf("Expected to fail because RBAC is not enabled")
+	}
+
+	mc = ManagedCluster{}
+	mc.Properties = &Properties{}
+	enableRBAC := true
+	mc.Properties.EnableRBAC = &enableRBAC
+	mc.Properties.AADProfile = &AADProfile{
+		ServerAppSecret: "ccbfaea3-7312-497e-81d9-9ad9b8a99853",
+	}
+	if err := mc.Properties.AADProfile.Validate(mc.Properties.EnableRBAC); err != ErrorAADServerAppIDNotSet {
+		t.Errorf("Expected to fail because ServerAppID is not set")
+	}
+
+	mc = ManagedCluster{}
+	mc.Properties = &Properties{}
+	enableRBAC = true
+	mc.Properties.EnableRBAC = &enableRBAC
+	mc.Properties.AADProfile = &AADProfile{
+		ServerAppID: "ccbfaea3-7312-497e-81d9-9ad9b8a99853",
+	}
+	if err := mc.Properties.AADProfile.Validate(mc.Properties.EnableRBAC); err != ErrorAADServerAppSecretNotSet {
+		t.Errorf("Expected to fail because ServerAppSecret is not set")
+	}
+
+	mc = ManagedCluster{}
+	mc.Properties = &Properties{}
+	enableRBAC = true
+	mc.Properties.EnableRBAC = &enableRBAC
+	mc.Properties.AADProfile = &AADProfile{
+		ServerAppID:     "ccbfaea3-7312-497e-81d9-9ad9b8a99853",
+		ServerAppSecret: "bcbfaea3-7312-497e-81d9-9ad9b8a99853",
+	}
+	if err := mc.Properties.AADProfile.Validate(mc.Properties.EnableRBAC); err != ErrorAADClientAppIDNotSet {
+		t.Errorf("Expected to fail because ClientAppID is not set")
+	}
+
+	mc = ManagedCluster{}
+	mc.Properties = &Properties{}
+	enableRBAC = true
+	mc.Properties.EnableRBAC = &enableRBAC
+	mc.Properties.AADProfile = &AADProfile{
+		ServerAppID:     "ccbfaea3-7312-497e-81d9-9ad9b8a99853",
+		ServerAppSecret: "bcbfaea3-7312-497e-81d9-9ad9b8a99853",
+		ClientAppID:     "acbfaea3-7312-497e-81d9-9ad9b8a99853",
+	}
+	if err := mc.Properties.AADProfile.Validate(mc.Properties.EnableRBAC); err != ErrorAADTenantIDNotSet {
+		t.Errorf("Expected to fail because TenantID is not set")
 	}
 }

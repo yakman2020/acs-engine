@@ -313,12 +313,11 @@ type KubernetesConfig struct {
 
 // BootstrapProfile represents the definition of the DCOS bootstrap node used to deploy the cluster
 type BootstrapProfile struct {
-	Count                    int    `json:"count,omitempty"`
-	VMSize                   string `json:"vmSize,omitempty"`
-	OSDiskSizeGB             int    `json:"osDiskSizeGB,omitempty"`
-	OAuthEnabled             bool   `json:"oauthEnabled,omitempty"`
-	FirstConsecutiveStaticIP string `json:"firstConsecutiveStaticIP,omitempty"`
-	Subnet                   string `json:"subnet,omitempty"`
+	VMSize       string `json:"vmSize,omitempty"`
+	OSDiskSizeGB int    `json:"osDiskSizeGB,omitempty"`
+	OAuthEnabled bool   `json:"oauthEnabled,omitempty"`
+	StaticIP     string `json:"staticIP,omitempty"`
+	Subnet       string `json:"subnet,omitempty"`
 }
 
 // DcosConfig Configuration for DC/OS
@@ -345,9 +344,7 @@ type OpenShiftConfig struct {
 	// EnableAADAuthentication is temporary, do not rely on it.
 	EnableAADAuthentication bool `json:"enableAADAuthentication,omitempty"`
 
-	ConfigBundles          map[string][]byte `json:"-"`
-	ExternalMasterHostname string            `json:"-"`
-	RouterLBHostname       string            `json:"-"`
+	ConfigBundles map[string][]byte `json:"configBundles,omitempty"`
 }
 
 // MasterProfile represents the definition of the master cluster
@@ -404,21 +401,23 @@ type Extension struct {
 
 // AgentPoolProfile represents an agent pool definition
 type AgentPoolProfile struct {
-	Name                string               `json:"name"`
-	Count               int                  `json:"count"`
-	VMSize              string               `json:"vmSize"`
-	OSDiskSizeGB        int                  `json:"osDiskSizeGB,omitempty"`
-	DNSPrefix           string               `json:"dnsPrefix,omitempty"`
-	OSType              OSType               `json:"osType,omitempty"`
-	Ports               []int                `json:"ports,omitempty"`
-	AvailabilityProfile string               `json:"availabilityProfile"`
-	StorageProfile      string               `json:"storageProfile,omitempty"`
-	DiskSizesGB         []int                `json:"diskSizesGB,omitempty"`
-	VnetSubnetID        string               `json:"vnetSubnetID,omitempty"`
-	Subnet              string               `json:"subnet"`
-	IPAddressCount      int                  `json:"ipAddressCount,omitempty"`
-	Distro              Distro               `json:"distro,omitempty"`
-	Role                AgentPoolProfileRole `json:"role,omitempty"`
+	Name                   string               `json:"name"`
+	Count                  int                  `json:"count"`
+	VMSize                 string               `json:"vmSize"`
+	OSDiskSizeGB           int                  `json:"osDiskSizeGB,omitempty"`
+	DNSPrefix              string               `json:"dnsPrefix,omitempty"`
+	OSType                 OSType               `json:"osType,omitempty"`
+	Ports                  []int                `json:"ports,omitempty"`
+	AvailabilityProfile    string               `json:"availabilityProfile"`
+	ScaleSetPriority       string               `json:"scaleSetPriority,omitempty"`
+	ScaleSetEvictionPolicy string               `json:"scaleSetEvictionPolicy,omitempty"`
+	StorageProfile         string               `json:"storageProfile,omitempty"`
+	DiskSizesGB            []int                `json:"diskSizesGB,omitempty"`
+	VnetSubnetID           string               `json:"vnetSubnetID,omitempty"`
+	Subnet                 string               `json:"subnet"`
+	IPAddressCount         int                  `json:"ipAddressCount,omitempty"`
+	Distro                 Distro               `json:"distro,omitempty"`
+	Role                   AgentPoolProfileRole `json:"role,omitempty"`
 
 	FQDN                  string            `json:"fqdn,omitempty"`
 	CustomNodeLabels      map[string]string `json:"customNodeLabels,omitempty"`
@@ -505,12 +504,25 @@ type HostedMasterProfile struct {
 	Subnet string `json:"subnet"`
 }
 
+// AuthenticatorType represents the authenticator type the cluster was
+// set up with.
+type AuthenticatorType string
+
+const (
+	// OIDC represent cluster setup in OIDC auth mode
+	OIDC AuthenticatorType = "oidc"
+	// Webhook represent cluster setup in wehhook auth mode
+	Webhook AuthenticatorType = "webhook"
+)
+
 // AADProfile specifies attributes for AAD integration
 type AADProfile struct {
 	// The client AAD application ID.
 	ClientAppID string `json:"clientAppID,omitempty"`
 	// The server AAD application ID.
 	ServerAppID string `json:"serverAppID,omitempty"`
+	// The server AAD application secret
+	ServerAppSecret string `json:"serverAppSecret,omitempty"`
 	// The AAD tenant ID to use for authentication.
 	// If not specified, will use the tenant of the deployment subscription.
 	// Optional
@@ -519,6 +531,8 @@ type AADProfile struct {
 	// cluster-admin RBAC role.
 	// Optional
 	AdminGroupID string `json:"adminGroupID,omitempty"`
+	// The authenticator to use, either "OIDC" or "Webhook".
+	Authenticator AuthenticatorType `json:"authenticator"`
 }
 
 // CustomProfile specifies custom properties that are used for
@@ -710,6 +724,11 @@ func (a *AgentPoolProfile) IsVirtualMachineScaleSets() bool {
 	return a.AvailabilityProfile == VirtualMachineScaleSets
 }
 
+// IsLowPriorityScaleSet returns true if the VMSS is Low Priority
+func (a *AgentPoolProfile) IsLowPriorityScaleSet() bool {
+	return a.AvailabilityProfile == VirtualMachineScaleSets && a.ScaleSetPriority == ScaleSetPriorityLow
+}
+
 // IsManagedDisks returns true if the customer specified disks
 func (a *AgentPoolProfile) IsManagedDisks() bool {
 	return a.StorageProfile == ManagedDisks
@@ -762,12 +781,10 @@ func (o *OrchestratorProfile) IsDCOS() bool {
 
 // IsAzureCNI returns true if Azure CNI network plugin is enabled
 func (o *OrchestratorProfile) IsAzureCNI() bool {
-	switch o.OrchestratorType {
-	case Kubernetes:
+	if o.KubernetesConfig != nil {
 		return o.KubernetesConfig.NetworkPlugin == "azure"
-	default:
-		return false
 	}
+	return false
 }
 
 // RequireRouteTable returns true if this deployment requires routing table
@@ -833,6 +850,17 @@ func (k *KubernetesConfig) IsACIConnectorEnabled() bool {
 		}
 	}
 	return aciConnectorAddon.IsEnabled(DefaultACIConnectorAddonEnabled)
+}
+
+// IsClusterAutoscalerEnabled checks if the cluster autoscaler addon is enabled
+func (k *KubernetesConfig) IsClusterAutoscalerEnabled() bool {
+	var clusterAutoscalerAddon KubernetesAddon
+	for i := range k.Addons {
+		if k.Addons[i].Name == DefaultClusterAutoscalerAddonName {
+			clusterAutoscalerAddon = k.Addons[i]
+		}
+	}
+	return clusterAutoscalerAddon.IsEnabled(DefaultClusterAutoscalerAddonEnabled)
 }
 
 // IsDashboardEnabled checks if the kubernetes-dashboard addon is enabled

@@ -1,95 +1,11 @@
     {
-      "apiVersion": "[variables('apiVersionStorageManagedDisks')]",
-      "location": "[variables('location')]",
-      "name": "[variables('bootstrapWinAvailabilitySet')]",
-      "properties": {
-        "platformFaultDomainCount": "2",
-        "platformUpdateDomainCount": "3",
-        "managed": "true"
-      },
-      "type": "Microsoft.Compute/availabilitySets"
-    },
-    {
       "apiVersion": "[variables('apiVersionDefault')]",
       "location": "[variables('location')]",
       "name": "[variables('bootstrapWinPublicIPAddressName')]",
       "properties": {
-        "dnsSettings": {
-          "domainNameLabel": "[variables('bootstrapWinEndpointDNSNamePrefix')]"
-        },
         "publicIPAllocationMethod": "Dynamic"
       },
       "type": "Microsoft.Network/publicIPAddresses"
-    },
-    {
-      "apiVersion": "[variables('apiVersionDefault')]",
-      "dependsOn": [
-        "[concat('Microsoft.Network/publicIPAddresses/', variables('bootstrapWinPublicIPAddressName'))]"
-      ],
-      "location": "[variables('location')]",
-      "name": "[variables('bootstrapWinLbName')]",
-      "properties": {
-        "backendAddressPools": [
-          {
-            "name": "[variables('bootstrapWinLbBackendPoolName')]"
-          }
-        ],
-        "frontendIPConfigurations": [
-          {
-            "name": "[variables('bootstrapWinLbIPConfigName')]",
-            "properties": {
-              "publicIPAddress": {
-                "id": "[resourceId('Microsoft.Network/publicIPAddresses',variables('bootstrapWinPublicIPAddressName'))]"
-              }
-            }
-          }
-        ]
-      },
-      "type": "Microsoft.Network/loadBalancers"
-    },
-    {
-      "apiVersion": "[variables('apiVersionDefault')]",
-      "copy": {
-        "count": "[variables('bootstrapCount')]",
-        "name": "bootstrapLbLoopNode"
-      },
-      "dependsOn": [
-        "[variables('bootstrapWinLbID')]"
-      ],
-      "location": "[variables('location')]",
-      "name": "[concat(variables('bootstrapWinLbName'), '/', 'rdp-', variables('bootstrapWinVMNamePrefix'), copyIndex())]",
-      "properties": {
-        "backendPort": 3389,
-        "enableFloatingIP": false,
-        "frontendIPConfiguration": {
-          "id": "[variables('bootstrapWinLbIPConfigID')]"
-        },
-        "frontendPort": "[copyIndex(3389)]",
-        "protocol": "tcp"
-      },
-      "type": "Microsoft.Network/loadBalancers/inboundNatRules"
-    },
-    {
-      "apiVersion": "[variables('apiVersionDefault')]",
-      "copy": {
-        "count": "[variables('bootstrapCount')]",
-        "name": "bootstrapLbLoopNode"
-      },
-      "dependsOn": [
-        "[variables('bootstrapWinLbID')]"
-      ],
-      "location": "[variables('location')]",
-      "name": "[concat(variables('bootstrapWinLbName'), '/', 'bootstrapService-', variables('bootstrapWinVMNamePrefix'), copyIndex())]",
-      "properties": {
-        "backendPort": 8086,
-        "enableFloatingIP": false,
-        "frontendIPConfiguration": {
-          "id": "[variables('bootstrapWinLbIPConfigID')]"
-        },
-        "frontendPort": "[copyIndex(8086)]",
-        "protocol": "tcp"
-      },
-      "type": "Microsoft.Network/loadBalancers/inboundNatRules"
     },
     {
       "apiVersion": "[variables('apiVersionDefault')]",
@@ -131,48 +47,32 @@
     },
     {
       "apiVersion": "[variables('apiVersionDefault')]",
-      "copy": {
-        "count": "[variables('bootstrapCount')]",
-        "name": "nicLoopNode"
-      },
       "dependsOn": [
-        "[variables('bootstrapWinNSGID')]",
 {{if not .MasterProfile.IsCustomVNET}}
         "[variables('vnetID')]",
 {{end}}
-        "[variables('bootstrapWinLbID')]",
-        "[concat(variables('bootstrapWinLbID'),'/inboundNatRules/rdp-',variables('bootstrapWinVMNamePrefix'),copyIndex())]",
-        "[concat(variables('bootstrapWinLbID'),'/inboundNatRules/bootstrapService-',variables('bootstrapWinVMNamePrefix'),copyIndex())]"
+        "[variables('bootstrapWinNSGID')]",
+        "[variables('bootstrapWinPublicIPAddressName')]"
       ],
       "location": "[variables('location')]",
-      "name": "[concat(variables('bootstrapWinVMNamePrefix'), 'nic-', copyIndex())]",
+      "name": "[concat(variables('bootstrapWinVMName'), '-nic')]",
       "properties": {
         "ipConfigurations": [
           {
             "name": "ipConfigNode",
             "properties": {
-              "loadBalancerBackendAddressPools": [
-                {
-                  "id": "[concat(variables('bootstrapWinLbID'), '/backendAddressPools/', variables('bootstrapWinLbBackendPoolName'))]"
-                }
-              ],
-              "loadBalancerInboundNatRules": [
-                {
-                  "id": "[concat(variables('bootstrapWinLbID'),'/inboundNatRules/rdp-',variables('bootstrapWinVMNamePrefix'),copyIndex())]"
-                },
-                {
-                  "id": "[concat(variables('bootstrapWinLbID'),'/inboundNatRules/bootstrapService-',variables('bootstrapWinVMNamePrefix'),copyIndex())]"
-                }
-              ],
-              "privateIPAddress": "[concat(variables('bootstrapFirstAddrPrefix'), copyIndex(add(variables('bootstrapCount'), int(variables('bootstrapFirstAddrOctet4')))))]",
+              "privateIPAddress": "[variables('bootstrapWinStaticIP')]",
               "privateIPAllocationMethod": "Static",
+              "publicIpAddress": {
+                "id": "[resourceId('Microsoft.Network/publicIpAddresses', variables('bootstrapWinPublicIPAddressName'))]"
+              },
               "subnet": {
                 "id": "[variables('masterVnetSubnetID')]"
               }
             }
           }
-        ]
-        ,"networkSecurityGroup": {
+        ],
+        "networkSecurityGroup": {
           "id": "[variables('bootstrapWinNSGID')]"
         }
       },
@@ -180,12 +80,8 @@
     },
     {
       "apiVersion": "[variables('apiVersionStorageManagedDisks')]",
-      "copy": {
-        "count": "[variables('bootstrapCount')]",
-        "name": "vmLoopNode"
-      },
       "dependsOn": [
-        "[concat('Microsoft.Network/networkInterfaces/', variables('bootstrapWinVMNamePrefix'), 'nic-', copyIndex())]",
+        "[concat('Microsoft.Network/networkInterfaces/', variables('bootstrapWinVMName'), '-nic')]",
 {{if .MasterProfile.IsStorageAccount}}
         "[variables('masterStorageAccountName')]",
 {{end}}
@@ -193,26 +89,23 @@
       ],
       "tags":
       {
-        "creationSource" : "[concat('acsengine-', variables('bootstrapWinVMNamePrefix'), copyIndex())]"
+        "creationSource" : "[concat('acsengine-', variables('bootstrapWinVMName'))]"
       },
       "location": "[variables('location')]",
-      "name": "[concat(variables('bootstrapWinVMNamePrefix'), copyIndex())]",
+      "name": "[variables('bootstrapWinVMName')]",
       "properties": {
-        "availabilitySet": {
-          "id": "[resourceId('Microsoft.Compute/availabilitySets',variables('bootstrapWinAvailabilitySet'))]"
-        },
         "hardwareProfile": {
           "vmSize": "[variables('bootstrapVMSize')]"
         },
         "networkProfile": {
           "networkInterfaces": [
             {
-              "id": "[resourceId('Microsoft.Network/networkInterfaces',concat(variables('bootstrapWinVMNamePrefix'), 'nic-', copyIndex()))]"
+              "id": "[resourceId('Microsoft.Network/networkInterfaces',concat(variables('bootstrapWinVMName'), '-nic'))]"
             }
           ]
         },
         "osProfile": {
-          "computername": "[concat('wbs', variables('nameSuffix'), copyIndex())]",
+          "computername": "[concat('wbs', variables('nameSuffix'))]",
           "adminUsername": "[variables('windowsAdminUsername')]",
           "adminPassword": "[variables('windowsAdminPassword')]"
         },
@@ -231,9 +124,9 @@
             "caching": "ReadOnly"
             ,"createOption": "FromImage"
 {{if .MasterProfile.IsStorageAccount}}
-            ,"name": "[concat(variables('bootstrapWinVMNamePrefix'), copyIndex(),'-osdisk')]"
+            ,"name": "[concat(variables('bootstrapWinVMName'), '-osdisk')]"
             ,"vhd": {
-              "uri": "[concat(reference(concat('Microsoft.Storage/storageAccounts/',variables('masterStorageAccountName')),variables('apiVersionStorage')).primaryEndpoints.blob,'vhds/',variables('bootstrapWinVMNamePrefix'),copyIndex(),'-osdisk.vhd')]"
+              "uri": "[concat(reference(concat('Microsoft.Storage/storageAccounts/',variables('masterStorageAccountName')),variables('apiVersionStorage')).primaryEndpoints.blob,'vhds/',variables('bootstrapWinVMName'),'-osdisk.vhd')]"
             }
 {{end}}
 {{if ne .OrchestratorProfile.DcosConfig.BootstrapProfile.OSDiskSizeGB 0}}

@@ -521,14 +521,14 @@ func convertV20160930OrchestratorProfile(v20160930 *v20160930.OrchestratorProfil
 	if api.OrchestratorType == Kubernetes {
 		api.OrchestratorVersion = "1.6.9"
 	} else if api.OrchestratorType == DCOS {
-		api.OrchestratorVersion = DCOSVersion1Dot9Dot0
+		api.OrchestratorVersion = common.DCOSVersion1Dot9Dot0
 	}
 }
 
 func convertV20160330OrchestratorProfile(v20160330 *v20160330.OrchestratorProfile, api *OrchestratorProfile) {
 	api.OrchestratorType = v20160330.OrchestratorType
 	if api.OrchestratorType == DCOS {
-		api.OrchestratorVersion = DCOSVersion1Dot9Dot0
+		api.OrchestratorVersion = common.DCOSVersion1Dot9Dot0
 	}
 }
 
@@ -537,7 +537,7 @@ func convertV20170131OrchestratorProfile(v20170131 *v20170131.OrchestratorProfil
 	if api.OrchestratorType == Kubernetes {
 		api.OrchestratorVersion = common.GetDefaultKubernetesVersion()
 	} else if api.OrchestratorType == DCOS {
-		api.OrchestratorVersion = DCOSVersion1Dot9Dot0
+		api.OrchestratorVersion = common.DCOSVersion1Dot9Dot0
 	}
 }
 
@@ -553,10 +553,10 @@ func convertV20170701OrchestratorProfile(v20170701cs *v20170701.OrchestratorProf
 		api.OrchestratorVersion = common.GetSupportedKubernetesVersion(v20170701cs.OrchestratorVersion)
 	case DCOS:
 		switch v20170701cs.OrchestratorVersion {
-		case DCOSVersion1Dot10Dot0, DCOSVersion1Dot9Dot0, DCOSVersion1Dot8Dot8:
+		case common.DCOSVersion1Dot10Dot0, common.DCOSVersion1Dot9Dot0, common.DCOSVersion1Dot8Dot8:
 			api.OrchestratorVersion = v20170701cs.OrchestratorVersion
 		default:
-			api.OrchestratorVersion = DCOSVersion1Dot9Dot0
+			api.OrchestratorVersion = common.DCOSVersion1Dot9Dot0
 		}
 	default:
 		break
@@ -578,11 +578,15 @@ func convertVLabsOrchestratorProfile(vp *vlabs.Properties, api *OrchestratorProf
 		if api.OpenShiftConfig != nil && api.OpenShiftConfig.KubernetesConfig != nil {
 			api.KubernetesConfig = api.OpenShiftConfig.KubernetesConfig
 		}
-		api.OrchestratorVersion = common.RationalizeReleaseAndVersion(
-			vlabscs.OrchestratorType,
-			vlabscs.OrchestratorRelease,
-			vlabscs.OrchestratorVersion,
-			false)
+		if vlabscs.OrchestratorVersion != common.OpenShiftVersionUnstable {
+			api.OrchestratorVersion = common.RationalizeReleaseAndVersion(
+				vlabscs.OrchestratorType,
+				vlabscs.OrchestratorRelease,
+				vlabscs.OrchestratorVersion,
+				false)
+		} else {
+			api.OrchestratorVersion = vlabscs.OrchestratorVersion
+		}
 	case Kubernetes:
 		if vlabscs.KubernetesConfig != nil {
 			api.KubernetesConfig = &KubernetesConfig{}
@@ -628,12 +632,11 @@ func convertVLabsDcosConfig(vlabs *vlabs.DcosConfig, api *DcosConfig) {
 
 	if vlabs.BootstrapProfile != nil {
 		api.BootstrapProfile = &BootstrapProfile{
-			Count:                    vlabs.BootstrapProfile.Count,
-			VMSize:                   vlabs.BootstrapProfile.VMSize,
-			OSDiskSizeGB:             vlabs.BootstrapProfile.OSDiskSizeGB,
-			OAuthEnabled:             vlabs.BootstrapProfile.OAuthEnabled,
-			FirstConsecutiveStaticIP: vlabs.BootstrapProfile.FirstConsecutiveStaticIP,
-			Subnet: vlabs.BootstrapProfile.Subnet,
+			VMSize:       vlabs.BootstrapProfile.VMSize,
+			OSDiskSizeGB: vlabs.BootstrapProfile.OSDiskSizeGB,
+			OAuthEnabled: vlabs.BootstrapProfile.OAuthEnabled,
+			StaticIP:     vlabs.BootstrapProfile.StaticIP,
+			Subnet:       vlabs.BootstrapProfile.Subnet,
 		}
 	}
 }
@@ -649,6 +652,7 @@ func convertVLabsOpenShiftConfig(vlabs *vlabs.OpenShiftConfig, api *OpenShiftCon
 	api.ClusterUsername = vlabs.ClusterUsername
 	api.ClusterPassword = vlabs.ClusterPassword
 	api.EnableAADAuthentication = vlabs.EnableAADAuthentication
+	api.ConfigBundles = vlabs.ConfigBundles
 }
 
 func convertVLabsKubernetesConfig(vlabs *vlabs.KubernetesConfig, api *KubernetesConfig) {
@@ -963,6 +967,8 @@ func convertVLabsAgentPoolProfile(vlabs *vlabs.AgentPoolProfile, api *AgentPoolP
 	api.Ports = []int{}
 	api.Ports = append(api.Ports, vlabs.Ports...)
 	api.AvailabilityProfile = vlabs.AvailabilityProfile
+	api.ScaleSetPriority = vlabs.ScaleSetPriority
+	api.ScaleSetEvictionPolicy = vlabs.ScaleSetEvictionPolicy
 	api.StorageProfile = vlabs.StorageProfile
 	api.DiskSizesGB = []int{}
 	api.DiskSizesGB = append(api.DiskSizesGB, vlabs.DiskSizesGB...)
@@ -1138,6 +1144,7 @@ func convertVLabsAADProfile(vlabs *vlabs.AADProfile, api *AADProfile) {
 	api.ServerAppID = vlabs.ServerAppID
 	api.TenantID = vlabs.TenantID
 	api.AdminGroupID = vlabs.AdminGroupID
+	api.Authenticator = OIDC
 }
 
 func addDCOSPublicAgentPool(api *Properties) {

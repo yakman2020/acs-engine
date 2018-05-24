@@ -1,7 +1,9 @@
 package openshift
 
 import (
+	"fmt"
 	"os"
+	"os/signal"
 	"path/filepath"
 	"strings"
 	"time"
@@ -18,8 +20,11 @@ import (
 )
 
 var (
-	cfg config.Config
-	eng engine.Engine
+	cfg         config.Config
+	eng         engine.Engine
+	ch          = make(chan os.Signal, 1)
+	failed      bool
+	interrupted bool
 )
 
 var _ = BeforeSuite(func() {
@@ -41,6 +46,33 @@ var _ = BeforeSuite(func() {
 		ClusterDefinition:  csInput,
 		ExpandedDefinition: csGenerated,
 	}
+	signal.Notify(ch, os.Interrupt)
+})
+
+var _ = AfterEach(func() {
+	// Recommended way to optionally act on failures after
+	// tests finish - see https://github.com/onsi/ginkgo/issues/361
+	failed = failed || CurrentGinkgoTestDescription().Failed
+})
+
+var _ = AfterSuite(func() {
+	select {
+	case <-ch:
+		// interrupt
+		interrupted = true
+	default:
+	}
+
+	if !failed && !interrupted {
+		return
+	}
+
+	nodeOut, _ := util.DumpNodes()
+	fmt.Println(nodeOut)
+	podOut, _ := util.DumpPods()
+	fmt.Println(podOut)
+	diagnosticsOut, _ := util.RunDiagnostics()
+	fmt.Println(diagnosticsOut)
 })
 
 var _ = Describe("Azure Container Cluster using the OpenShift Orchestrator", func() {
@@ -54,6 +86,32 @@ var _ = Describe("Azure Container Cluster using the OpenShift Orchestrator", fun
 	It("should have have the appropriate node count", func() {
 		ready := knode.WaitOnReady(eng.NodeCount(), 10*time.Second, cfg.Timeout)
 		Expect(ready).To(Equal(true))
+	})
+
+	It("should label nodes correctly", func() {
+		labels := map[string]map[string]string{
+			"master": {
+				"node-role.kubernetes.io/master": "true",
+				"openshift-infra":                "apiserver",
+			},
+			"compute": {
+				"node-role.kubernetes.io/compute": "true",
+				"region": "primary",
+			},
+			"infra": {
+				"region": "infra",
+			},
+		}
+		list, err := knode.Get()
+		Expect(err).NotTo(HaveOccurred())
+
+		for _, node := range list.Nodes {
+			kind := strings.Split(node.Metadata.Name, "-")[1]
+			Expect(labels).To(HaveKey(kind))
+			for k, v := range labels[kind] {
+				Expect(node.Metadata.Labels).To(HaveKeyWithValue(k, v))
+			}
+		}
 	})
 
 	It("should be running the expected version", func() {

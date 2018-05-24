@@ -307,12 +307,11 @@ type KubernetesConfig struct {
 
 // BootstrapProfile represents the definition of the DCOS bootstrap node used to deploy the cluster
 type BootstrapProfile struct {
-	Count                    int    `json:"count,omitempty"`
-	VMSize                   string `json:"vmSize,omitempty"`
-	OSDiskSizeGB             int    `json:"osDiskSizeGB,omitempty"`
-	OAuthEnabled             bool   `json:"oauthEnabled,omitempty"`
-	FirstConsecutiveStaticIP string `json:"firstConsecutiveStaticIP,omitempty"`
-	Subnet                   string `json:"subnet,omitempty"`
+	VMSize       string `json:"vmSize,omitempty"`
+	OSDiskSizeGB int    `json:"osDiskSizeGB,omitempty"`
+	OAuthEnabled bool   `json:"oauthEnabled,omitempty"`
+	StaticIP     string `json:"staticIP,omitempty"`
+	Subnet       string `json:"subnet,omitempty"`
 }
 
 // DcosConfig Configuration for DC/OS
@@ -338,6 +337,8 @@ type OpenShiftConfig struct {
 
 	// EnableAADAuthentication is temporary, do not rely on it.
 	EnableAADAuthentication bool `json:"enableAADAuthentication,omitempty"`
+
+	ConfigBundles map[string][]byte `json:"configBundles,omitempty"`
 }
 
 // MasterProfile represents the definition of the master cluster
@@ -399,22 +400,24 @@ type Extension struct {
 
 // AgentPoolProfile represents an agent pool definition
 type AgentPoolProfile struct {
-	Name                string               `json:"name" validate:"required"`
-	Count               int                  `json:"count" validate:"required,min=1,max=100"`
-	VMSize              string               `json:"vmSize" validate:"required"`
-	OSDiskSizeGB        int                  `json:"osDiskSizeGB,omitempty" validate:"min=0,max=1023"`
-	DNSPrefix           string               `json:"dnsPrefix,omitempty"`
-	OSType              OSType               `json:"osType,omitempty"`
-	Ports               []int                `json:"ports,omitempty" validate:"dive,min=1,max=65535"`
-	AvailabilityProfile string               `json:"availabilityProfile"`
-	StorageProfile      string               `json:"storageProfile" validate:"eq=StorageAccount|eq=ManagedDisks|len=0"`
-	DiskSizesGB         []int                `json:"diskSizesGB,omitempty" validate:"max=4,dive,min=1,max=1023"`
-	VnetSubnetID        string               `json:"vnetSubnetID,omitempty"`
-	IPAddressCount      int                  `json:"ipAddressCount,omitempty" validate:"min=0,max=256"`
-	Distro              Distro               `json:"distro,omitempty"`
-	KubernetesConfig    *KubernetesConfig    `json:"kubernetesConfig,omitempty"`
-	ImageRef            *ImageReference      `json:"imageReference,omitempty"`
-	Role                AgentPoolProfileRole `json:"role,omitempty"`
+	Name                   string               `json:"name" validate:"required"`
+	Count                  int                  `json:"count" validate:"required,min=1,max=100"`
+	VMSize                 string               `json:"vmSize" validate:"required"`
+	OSDiskSizeGB           int                  `json:"osDiskSizeGB,omitempty" validate:"min=0,max=1023"`
+	DNSPrefix              string               `json:"dnsPrefix,omitempty"`
+	OSType                 OSType               `json:"osType,omitempty"`
+	Ports                  []int                `json:"ports,omitempty" validate:"dive,min=1,max=65535"`
+	AvailabilityProfile    string               `json:"availabilityProfile"`
+	ScaleSetPriority       string               `json:"scaleSetPriority,omitempty" validate:"eq=Regular|eq=Low|len=0"`
+	ScaleSetEvictionPolicy string               `json:"scaleSetEvictionPolicy,omitempty" validate:"eq=Delete|eq=Deallocate|len=0"`
+	StorageProfile         string               `json:"storageProfile" validate:"eq=StorageAccount|eq=ManagedDisks|len=0"`
+	DiskSizesGB            []int                `json:"diskSizesGB,omitempty" validate:"max=4,dive,min=1,max=1023"`
+	VnetSubnetID           string               `json:"vnetSubnetID,omitempty"`
+	IPAddressCount         int                  `json:"ipAddressCount,omitempty" validate:"min=0,max=256"`
+	Distro                 Distro               `json:"distro,omitempty"`
+	KubernetesConfig       *KubernetesConfig    `json:"kubernetesConfig,omitempty"`
+	ImageRef               *ImageReference      `json:"imageReference,omitempty"`
+	Role                   AgentPoolProfileRole `json:"role,omitempty"`
 
 	// subnet is internal
 	subnet string

@@ -4,9 +4,11 @@ import (
 	"errors"
 	"fmt"
 	"reflect"
+	"strings"
 	"testing"
 
 	"github.com/Azure/acs-engine/pkg/api/common"
+	"github.com/Azure/acs-engine/pkg/helpers"
 	"github.com/Masterminds/semver"
 )
 
@@ -26,76 +28,163 @@ const (
 )
 
 func Test_OrchestratorProfile_Validate(t *testing.T) {
-	o := &OrchestratorProfile{
-		OrchestratorType: "DCOS",
-		KubernetesConfig: &KubernetesConfig{},
+	tests := map[string]struct {
+		orchestratorProfile *OrchestratorProfile
+		expectedError       string
+		isUpdate            bool
+	}{
+		"should error when KubernetesConfig populated for non-Kubernetes OrchestratorType": {
+			orchestratorProfile: &OrchestratorProfile{
+				OrchestratorType: "DCOS",
+				KubernetesConfig: &KubernetesConfig{
+					ClusterSubnet: "10.0.0.0/16",
+				},
+			},
+			expectedError: "KubernetesConfig can be specified only when OrchestratorType is Kubernetes or OpenShift",
+		},
+		"should not error with empty object": {
+			orchestratorProfile: &OrchestratorProfile{
+				OrchestratorType: "Kubernetes",
+				DcosConfig:       &DcosConfig{},
+			},
+		},
+		"should error when DcosConfig populated for non-Kubernetes OrchestratorType 1": {
+			orchestratorProfile: &OrchestratorProfile{
+				OrchestratorType: "Kubernetes",
+				DcosConfig: &DcosConfig{
+					DcosWindowsBootstrapURL: "http://www.microsoft.com",
+				},
+			},
+			expectedError: "DcosConfig can be specified only when OrchestratorType is DCOS",
+		},
+		"should error when DcosConfig populated for non-Kubernetes OrchestratorType 2": {
+			orchestratorProfile: &OrchestratorProfile{
+				OrchestratorType: "Kubernetes",
+				DcosConfig: &DcosConfig{
+					DcosWindowsBootstrapURL: "http://www.microsoft.com",
+					DcosBootstrapURL:        "http://www.microsoft.com",
+				},
+			},
+			expectedError: "DcosConfig can be specified only when OrchestratorType is DCOS",
+		},
+		"kubernetes should have failed on old patch version": {
+			orchestratorProfile: &OrchestratorProfile{
+				OrchestratorType:    "Kubernetes",
+				OrchestratorVersion: "1.7.3",
+			},
+			expectedError: "the following user supplied OrchestratorProfile configuration is not supported: OrchestratorType: Kubernetes, OrchestratorRelease: , OrchestratorVersion: 1.7.3. Please check supported Release or Version for this build of acs-engine",
+		},
+		"kubernetes should not fail on old patch version if update": {
+			orchestratorProfile: &OrchestratorProfile{
+				OrchestratorType:    "Kubernetes",
+				OrchestratorVersion: "1.7.3",
+			},
+			isUpdate: true,
+		},
+		"kubernetes should not have failed on version with v prefix": {
+			orchestratorProfile: &OrchestratorProfile{
+				OrchestratorType:    "Kubernetes",
+				OrchestratorVersion: "v1.9.0",
+			},
+		},
+		"openshift should have failed on old version": {
+			orchestratorProfile: &OrchestratorProfile{
+				OrchestratorType:    OpenShift,
+				OrchestratorVersion: "v1.0",
+			},
+			expectedError: "OrchestratorProfile is not able to be rationalized, check supported Release or Version",
+		},
+		"openshift should not have failed on old version if update": {
+			orchestratorProfile: &OrchestratorProfile{
+				OrchestratorType:    OpenShift,
+				OrchestratorVersion: "v1.0",
+			},
+			isUpdate: true,
+		},
+		"openshift should not have failed on good version": {
+			orchestratorProfile: &OrchestratorProfile{
+				OrchestratorType:    OpenShift,
+				OrchestratorVersion: "3.9.0",
+				OpenShiftConfig:     validOpenShiftConifg(),
+			},
+		},
+		"openshift should not have failed on good version with v prefix": {
+			orchestratorProfile: &OrchestratorProfile{
+				OrchestratorType:    OpenShift,
+				OrchestratorVersion: "v3.9.0",
+				OpenShiftConfig:     validOpenShiftConifg(),
+			},
+		},
+		"openshift fails with unset config": {
+			orchestratorProfile: &OrchestratorProfile{
+				OrchestratorType:    OpenShift,
+				OrchestratorVersion: "v3.9.0",
+			},
+			expectedError: "OpenShiftConfig must be specified for OpenShift orchestrator",
+		},
 	}
 
-	o.KubernetesConfig.ClusterSubnet = "10.0.0.0/16"
-	if err := o.Validate(false); err == nil {
-		t.Errorf("should error when KubernetesConfig populated for non-Kubernetes OrchestratorType")
+	for testName, test := range tests {
+		err := test.orchestratorProfile.Validate(test.isUpdate)
+
+		if test.expectedError == "" && err == nil {
+			continue
+		}
+		if test.expectedError == "" && err != nil {
+			t.Errorf("%s expected no error but received: %s", testName, err.Error())
+			continue
+		}
+		if test.expectedError != "" && err == nil {
+			t.Errorf("%s expected error: %s, but received no error", testName, test.expectedError)
+			continue
+		}
+		if !strings.Contains(err.Error(), test.expectedError) {
+			t.Errorf("%s expected error to container %s but received: %s", testName, test.expectedError, err.Error())
+		}
+	}
+}
+
+func Test_OpenShiftConfig_Validate(t *testing.T) {
+	tests := map[string]struct {
+		orchestratorProfile *OrchestratorProfile
+		expectedError       string
+		isUpdate            bool
+	}{
+		"openshift config requires username": {
+			orchestratorProfile: &OrchestratorProfile{
+				OrchestratorType:    OpenShift,
+				OrchestratorVersion: "v3.9.0",
+				OpenShiftConfig:     &OpenShiftConfig{ClusterPassword: "foo"},
+			},
+			expectedError: "ClusterUsername and ClusterPassword must both be specified",
+		},
+		"openshift config requires password": {
+			orchestratorProfile: &OrchestratorProfile{
+				OrchestratorType:    OpenShift,
+				OrchestratorVersion: "v3.9.0",
+				OpenShiftConfig:     &OpenShiftConfig{ClusterUsername: "foo"},
+			},
+			expectedError: "ClusterUsername and ClusterPassword must both be specified",
+		},
 	}
 
-	o = &OrchestratorProfile{
-		OrchestratorType: "Kubernetes",
-		DcosConfig:       &DcosConfig{},
-	}
+	for testName, test := range tests {
+		err := test.orchestratorProfile.Validate(test.isUpdate)
 
-	if err := o.Validate(false); err != nil {
-		t.Errorf("should not error with empty object: %v", err)
-	}
-
-	o.DcosConfig.DcosWindowsBootstrapURL = "http://www.microsoft.com"
-	if err := o.Validate(false); err == nil {
-		t.Errorf("should error when DcosConfig populated for non-Kubernetes OrchestratorType")
-	}
-
-	o.DcosConfig.DcosBootstrapURL = "http://www.microsoft.com"
-	if err := o.Validate(false); err == nil {
-		t.Errorf("should error when DcosConfig populated for non-Kubernetes OrchestratorType")
-	}
-
-	o = &OrchestratorProfile{
-		OrchestratorType:    "Kubernetes",
-		OrchestratorVersion: "1.7.3",
-	}
-
-	if err := o.Validate(false); err == nil {
-		t.Errorf("should have failed on old patch version")
-	}
-
-	if err := o.Validate(true); err != nil {
-		t.Errorf("should not have failed on old patch version during update valdiation")
-	}
-
-	o = &OrchestratorProfile{
-		OrchestratorType:    "Kubernetes",
-		OrchestratorVersion: "v1.9.0",
-	}
-
-	if err := o.Validate(false); err != nil {
-		t.Errorf("should not have failed on version with v prefix")
-	}
-
-	o = &OrchestratorProfile{
-		OrchestratorType:    OpenShift,
-		OrchestratorVersion: "v1.0",
-	}
-
-	if err := o.Validate(false); err == nil {
-		t.Errorf("should have failed on old version")
-	}
-	if err := o.Validate(true); err != nil {
-		t.Errorf("should not have failed on old version")
-	}
-
-	o = &OrchestratorProfile{
-		OrchestratorType:    Kubernetes,
-		OrchestratorVersion: "v1.9.0",
-		OpenShiftConfig:     &OpenShiftConfig{},
-	}
-	if err := o.Validate(false); err == nil {
-		t.Errorf("should have failed on OpenShift config specified with non OpenShift orchestrator type")
+		if test.expectedError == "" && err == nil {
+			continue
+		}
+		if test.expectedError == "" && err != nil {
+			t.Errorf("%s expected no error but received: %s", testName, err.Error())
+			continue
+		}
+		if test.expectedError != "" && err == nil {
+			t.Errorf("%s expected error: %s, but received no error", testName, test.expectedError)
+			continue
+		}
+		if !strings.Contains(err.Error(), test.expectedError) {
+			t.Errorf("%s expected error to container %s but received: %s", testName, test.expectedError, err.Error())
+		}
 	}
 }
 
@@ -688,6 +777,43 @@ func Test_Properties_ValidateContainerRuntime(t *testing.T) {
 			"should error on clear-containers for windows clusters",
 		)
 	}
+
+	p.OrchestratorProfile.KubernetesConfig.ContainerRuntime = "containerd"
+	p.AgentPoolProfiles = []*AgentPoolProfile{
+		{
+			OSType: Windows,
+		},
+	}
+	if err := p.validateContainerRuntime(); err == nil {
+		t.Errorf(
+			"should error on containerd for windows clusters",
+		)
+	}
+}
+
+func Test_Properties_ValidateAddons(t *testing.T) {
+	p := &Properties{}
+	p.OrchestratorProfile = &OrchestratorProfile{}
+	p.OrchestratorProfile.OrchestratorType = Kubernetes
+
+	p.OrchestratorProfile.KubernetesConfig = &KubernetesConfig{
+		Addons: []KubernetesAddon{
+			{
+				Name:    "cluster-autoscaler",
+				Enabled: helpers.PointerToBool(true),
+			},
+		},
+	}
+	p.AgentPoolProfiles = []*AgentPoolProfile{
+		{
+			AvailabilityProfile: AvailabilitySet,
+		},
+	}
+	if err := p.validateAddons(); err == nil {
+		t.Errorf(
+			"should error on cluster-autoscaler with availability sets",
+		)
+	}
 }
 
 func TestWindowsVersions(t *testing.T) {
@@ -794,11 +920,60 @@ func TestValidateImageNameAndGroup(t *testing.T) {
 	}
 
 	for _, test := range tests {
-		t.Logf("scenario %q", test.name)
-
 		gotErr := validateImageNameAndGroup(test.imageName, test.imageResourceGroup)
 		if !reflect.DeepEqual(gotErr, test.expectedErr) {
+			t.Logf("scenario %q", test.name)
 			t.Errorf("expected error: %v, got: %v", test.expectedErr, gotErr)
+		}
+	}
+}
+
+func TestMasterProfileValidate(t *testing.T) {
+	tests := []struct {
+		orchestratorType string
+		masterProfile    MasterProfile
+		expectedErr      string
+	}{
+		{
+			masterProfile: MasterProfile{
+				DNSPrefix: "bad!",
+			},
+			expectedErr: "DNS name 'bad!' is invalid. The DNS name must contain between 3 and 45 characters.  The name can contain only letters, numbers, and hyphens.  The name must start with a letter and must end with a letter or a number (length was 4)",
+		},
+		{
+			masterProfile: MasterProfile{
+				DNSPrefix: "dummy",
+				Count:     1,
+			},
+		},
+		{
+			masterProfile: MasterProfile{
+				DNSPrefix: "dummy",
+				Count:     3,
+			},
+		},
+		{
+			orchestratorType: OpenShift,
+			masterProfile: MasterProfile{
+				DNSPrefix: "dummy",
+				Count:     1,
+			},
+		},
+		{
+			orchestratorType: OpenShift,
+			masterProfile: MasterProfile{
+				DNSPrefix: "dummy",
+				Count:     3,
+			},
+			expectedErr: "openshift can only deployed with one master",
+		},
+	}
+
+	for i, test := range tests {
+		err := test.masterProfile.Validate(&OrchestratorProfile{OrchestratorType: test.orchestratorType})
+		if test.expectedErr == "" && err != nil ||
+			test.expectedErr != "" && (err == nil || test.expectedErr != err.Error()) {
+			t.Errorf("test %d: unexpected error %q\n", i, err)
 		}
 	}
 }
@@ -947,11 +1122,18 @@ func TestOpenshiftValidate(t *testing.T) {
 	}
 
 	for _, test := range tests {
-		t.Logf("running scenario %q", test.name)
-
 		gotErr := test.properties.Validate(test.isUpgrade)
 		if !reflect.DeepEqual(test.expectedErr, gotErr) {
+			t.Logf("running scenario %q", test.name)
 			t.Errorf("expected error: %v\ngot error: %v", test.expectedErr, gotErr)
 		}
+	}
+}
+
+// validOpenShiftConifg returns a valid OpenShift config that can be use for validation tests.
+func validOpenShiftConifg() *OpenShiftConfig {
+	return &OpenShiftConfig{
+		ClusterUsername: "foo",
+		ClusterPassword: "bar",
 	}
 }
