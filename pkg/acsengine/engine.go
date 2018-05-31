@@ -55,10 +55,11 @@ const (
 	dcosWindowsProvision = "dcos/dcosWindowsProvision.ps1"
 	dcosProvisionSource  = "dcos/dcosprovisionsource.sh"
 
-	dcos2Provision          = "dcos/bstrap/dcosprovision.sh"
-	dcos2BootstrapProvision = "dcos/bstrap/bootstrapprovision.sh"
-	dcos2CustomData1110     = "dcos/bstrap/dcos1.11.0.customdata.t"
-	dcos2CustomData1112     = "dcos/bstrap/dcos1.11.2.customdata.t"
+	dcos2Provision                 = "dcos/bstrap/dcosprovision.sh"
+	dcos2BootstrapProvision        = "dcos/bstrap/bootstrapprovision.sh"
+	dcos2BootstrapWindowsProvision = "dcos/bstrap/bootstrapWindowsProvision.ps1"
+	dcos2CustomData1110            = "dcos/bstrap/dcos1.11.0.customdata.t"
+	dcos2CustomData1112            = "dcos/bstrap/dcos1.11.2.customdata.t"
 )
 
 const (
@@ -1187,6 +1188,18 @@ func (t *TemplateGenerator) getTemplateFuncMap(cs *api.ContainerService) templat
 					"BOOTSTRAP_OAUTH_ENABLED": strconv.FormatBool(cs.Properties.OrchestratorProfile.DcosConfig.BootstrapProfile.OAuthEnabled)})
 
 			return fmt.Sprintf("\"customData\": \"[base64(concat('#cloud-config\\n\\n', '%s'))]\",", str)
+		},
+		"GetDCOSBootstrapWindowsCustomData": func() string {
+			b, err := Asset(dcos2BootstrapWindowsProvision)
+			if err != nil {
+				// this should never happen and this is a bug
+				panic(fmt.Sprintf("BUG: %s", err.Error()))
+			}
+			// translate the parameters
+			csStr := string(b)
+			csStr = strings.Replace(csStr, "\r\n", "\n", -1)
+			str := getBase64CustomScriptFromStr(csStr)
+			return fmt.Sprintf("\"customData\": \"%s\"", str)
 		},
 		"GetDCOSMasterCustomData": func() string {
 			masterAttributeContents := getDCOSMasterCustomNodeLabels()

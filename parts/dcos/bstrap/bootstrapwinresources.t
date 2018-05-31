@@ -107,7 +107,8 @@
         "osProfile": {
           "computername": "[concat('wbs', variables('nameSuffix'))]",
           "adminUsername": "[variables('windowsAdminUsername')]",
-          "adminPassword": "[variables('windowsAdminPassword')]"
+          "adminPassword": "[variables('windowsAdminPassword')]",
+          {{GetDCOSBootstrapWindowsCustomData}}
         },
         "storageProfile": {
           "imageReference": {
@@ -136,4 +137,23 @@
         }
       },
       "type": "Microsoft.Compute/virtualMachines"
+    },
+    {
+      "apiVersion": "[variables('apiVersionDefault')]",
+      "dependsOn": [
+        "[variables('bootstrapWinVMName')]"
+      ],
+      "location": "[variables('location')]",
+      "type": "Microsoft.Compute/virtualMachines/extensions",
+      "name": "[concat(variables('bootstrapWinVMName'),'/bootstrapready')]",
+      "properties": {
+        "publisher": "Microsoft.Compute",
+        "type": "CustomScriptExtension",
+        "typeHandlerVersion": "1.8",
+        "autoUpgradeMinorVersion": true,
+        "settings": {},
+        "protectedSettings": {
+          "commandToExecute": "[variables('bootstrapWinScript')]"
+        }
+      }
     }
