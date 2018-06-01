@@ -1195,8 +1195,14 @@ func (t *TemplateGenerator) getTemplateFuncMap(cs *api.ContainerService) templat
 				// this should never happen and this is a bug
 				panic(fmt.Sprintf("BUG: %s", err.Error()))
 			}
+			masterIPList := generateIPList(cs.Properties.MasterProfile.Count, cs.Properties.MasterProfile.FirstConsecutiveStaticIP)
+			for i, v := range masterIPList {
+				masterIPList[i] = "- " + v
+			}
 			// translate the parameters
 			csStr := string(b)
+			csStr = strings.Replace(csStr, "BOOTSTRAP_OAUTH_ENABLED", strconv.FormatBool(cs.Properties.OrchestratorProfile.DcosConfig.BootstrapProfile.OAuthEnabled), -1)
+			csStr = strings.Replace(csStr, "MASTER_IP_LIST", strings.Join(masterIPList, "\n"), -1)
 			csStr = strings.Replace(csStr, "\r\n", "\n", -1)
 			str := getBase64CustomScriptFromStr(csStr)
 			return fmt.Sprintf("\"customData\": \"%s\"", str)
