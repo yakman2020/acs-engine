@@ -64,19 +64,58 @@ try {
     New-item -itemtype directory -erroraction silentlycontinue c:\temp
     cd c:\temp
     New-item -itemtype directory -erroraction silentlycontinue c:\temp\genconf
+
     CreateDcosConfig "c:\temp\genconf\config.yaml"
+
     CreateIpDetect "c:\temp\genconf\ip-detect.ps1"
-    & Curl.exe $BootstrapURL -o c:\temp\dcos_generate_config.windows.tar.xz
+
+    & curl.exe --keepalive-time 2 -fLsSv --retry 20 -Y 100000 -y 60 -o c:\temp\dcos_generate_config.windows.tar.xz $BootstrapURL
     if ($LASTEXITCODE -ne 0) {
         throw "Failed to download $BootstrapURL"
     }
+
     & tar -xvf .\dcos_generate_config.windows.tar.xz
     if ($LASTEXITCODE -ne 0) {
-        throw "Failed to untar $BootstrapURL"
+        throw "Failed to untar dcos_generate_config.windows.tar.xz"
     }
+
     & .\install_bootstrap_windows.ps1
     if ($LASTEXITCODE -ne 0) {
         throw "Failed to run install_bootstrap_windows.ps1"
+    }
+
+    # Run docker container with nginx
+    New-item -itemtype directory -erroraction silentlycontinue c:\docker
+    cd c:\docker
+
+    & curl.exe --keepalive-time 2 -fLsSv --retry 20 -Y 100000 -y 60 -o c:\docker\dockerfile https://dcos-mirror.azureedge.net/winbootstrap/dockerfile
+    if ($LASTEXITCODE -ne 0) {
+        throw "Failed to download dockerfile"
+    }
+
+    & curl.exe --keepalive-time 2 -fLsSv --retry 20 -Y 100000 -y 60 -o c:\docker\nginx.conf https://dcos-mirror.azureedge.net/winbootstrap/nginx.conf
+    if ($LASTEXITCODE -ne 0) {
+        throw "Failed to download nginx.conf"
+    }
+
+    # only create customnat if it does not exist
+    $a = docker network ls | select-string -pattern "customnat"
+    if ($a.count -eq 0)
+    {
+        & docker.exe network create --driver="nat" --opt "com.docker.network.windowsshim.disable_gatewaydns=true" "customnat"
+        if ($LASTEXITCODE -ne 0) {
+            throw "Failed to create customnat docker network"
+        }
+    }
+
+    & docker.exe build --network customnat -t nginx:1803 c:\docker
+    if ($LASTEXITCODE -ne 0) {
+        throw "Failed to build docker image"
+    }
+
+    & docker.exe run --rm -d --network customnat -p 9999:80 -v C:/temp/genconf/serve/:c:/nginx/html:ro nginx:1803
+    if ($LASTEXITCODE -ne 0) {
+        throw "Failed to run docker image"
     }
 } catch {
     Write-Log "Failed to provision Windows bootstrap node: $_"
