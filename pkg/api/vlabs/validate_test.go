@@ -125,7 +125,7 @@ func Test_OrchestratorProfile_Validate(t *testing.T) {
 	}
 
 	for testName, test := range tests {
-		err := test.orchestratorProfile.Validate(test.isUpdate)
+		err := test.orchestratorProfile.Validate(test.isUpdate, false)
 
 		if test.expectedError == "" && err == nil {
 			continue
@@ -169,7 +169,7 @@ func Test_OpenShiftConfig_Validate(t *testing.T) {
 	}
 
 	for testName, test := range tests {
-		err := test.orchestratorProfile.Validate(test.isUpdate)
+		err := test.orchestratorProfile.Validate(test.isUpdate, false)
 
 		if test.expectedError == "" && err == nil {
 			continue
@@ -812,6 +812,33 @@ func Test_Properties_ValidateAddons(t *testing.T) {
 	if err := p.validateAddons(); err == nil {
 		t.Errorf(
 			"should error on cluster-autoscaler with availability sets",
+		)
+	}
+
+	p.AgentPoolProfiles = []*AgentPoolProfile{
+		{
+			VMSize: "Standard_NC6",
+		},
+	}
+	p.OrchestratorProfile.KubernetesConfig = &KubernetesConfig{
+		Addons: []KubernetesAddon{
+			{
+				Name:    "nvidia-device-plugin",
+				Enabled: helpers.PointerToBool(true),
+			},
+		},
+	}
+	p.OrchestratorProfile.OrchestratorRelease = "1.9"
+	if err := p.validateAddons(); err == nil {
+		t.Errorf(
+			"should error on nvidia-device-plugin with k8s < 1.10",
+		)
+	}
+
+	p.OrchestratorProfile.OrchestratorRelease = "1.10"
+	if err := p.validateAddons(); err != nil {
+		t.Errorf(
+			"should not error on nvidia-device-plugin with k8s >= 1.10",
 		)
 	}
 }

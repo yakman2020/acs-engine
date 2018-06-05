@@ -120,6 +120,7 @@ func TestSetMissingKubeletValues(t *testing.T) {
 		"--image-gc-low-threshold":       "7",
 		"--non-masquerade-cidr":          "8",
 		"--cloud-provider":               "9",
+		"--pod-max-pids":                 "10",
 	}
 	setMissingKubeletValues(config, defaultKubeletConfig)
 	for key, val := range defaultKubeletConfig {
@@ -145,6 +146,7 @@ func TestSetMissingKubeletValues(t *testing.T) {
 		"--image-gc-low-threshold":       "7",
 		"--non-masquerade-cidr":          "8",
 		"--cloud-provider":               "c",
+		"--pod-max-pids":                 "10",
 	}
 	setMissingKubeletValues(config, defaultKubeletConfig)
 	for key, val := range expectedResult {
@@ -281,7 +283,7 @@ func TestAssignDefaultAddonVals(t *testing.T) {
 
 }
 
-func TestKubeletFeatureGatesEnsureAcceleratorsOnAgentsFor1_6_0(t *testing.T) {
+func TestKubeletFeatureGatesEnsureFeatureGatesOnAgentsFor1_6_0(t *testing.T) {
 	mockCS := getMockBaseContainerService("1.6.0")
 	properties := mockCS.Properties
 
@@ -292,11 +294,11 @@ func TestKubeletFeatureGatesEnsureAcceleratorsOnAgentsFor1_6_0(t *testing.T) {
 	setKubeletConfig(&mockCS)
 
 	agentFeatureGates := properties.AgentPoolProfiles[0].KubernetesConfig.KubeletConfig["--feature-gates"]
-	if agentFeatureGates != "Accelerators=true,TopLevel=true" {
-		t.Fatalf("setKubeletConfig did not add 'Accelerators=true' for agent profile: expected 'Accelerators=true;TopLevel=true' got '%s'", agentFeatureGates)
+	if agentFeatureGates != "TopLevel=true" {
+		t.Fatalf("setKubeletConfig did not add 'TopLevel=true' for agent profile: expected 'TopLevel=true' got '%s'", agentFeatureGates)
 	}
 
-	// Verify that the Accelerators feature gate override has only been applied to the agents
+	// Verify that the TopLevel feature gate override has only been applied to the agents
 	masterFeatureFates := properties.MasterProfile.KubernetesConfig.KubeletConfig["--feature-gates"]
 	if masterFeatureFates != "TopLevel=true" {
 		t.Fatalf("setKubeletConfig modified feature gates for master profile: expected 'TopLevel=true' got '%s'", agentFeatureGates)
@@ -316,11 +318,11 @@ func TestKubeletFeatureGatesEnsureMasterAndAgentConfigUsedFor1_6_0(t *testing.T)
 	setKubeletConfig(&mockCS)
 
 	agentFeatureGates := properties.AgentPoolProfiles[0].KubernetesConfig.KubeletConfig["--feature-gates"]
-	if agentFeatureGates != "Accelerators=true,AgentLevel=true" {
-		t.Fatalf("setKubeletConfig agent profile: expected 'Accelerators=true,AgentLevel=true' got '%s'", agentFeatureGates)
+	if agentFeatureGates != "AgentLevel=true" {
+		t.Fatalf("setKubeletConfig agent profile: expected 'AgentLevel=true' got '%s'", agentFeatureGates)
 	}
 
-	// Verify that the Accelerators feature gate override has only been applied to the agents
+	// Verify that the TopLevel feature gate override has only been applied to the agents
 	masterFeatureFates := properties.MasterProfile.KubernetesConfig.KubeletConfig["--feature-gates"]
 	if masterFeatureFates != "MasterLevel=true" {
 		t.Fatalf("setKubeletConfig master profile: expected 'MasterLevel=true' got '%s'", agentFeatureGates)
@@ -458,7 +460,7 @@ func TestStorageProfile(t *testing.T) {
 		Enabled:        helpers.PointerToBool(true),
 		JumpboxProfile: &api.PrivateJumpboxProfile{},
 	}
-	SetPropertiesDefaults(&mockCS, false)
+	setPropertiesDefaults(&mockCS, false)
 	if properties.MasterProfile.StorageProfile != api.ManagedDisks {
 		t.Fatalf("MasterProfile.StorageProfile did not have the expected configuration, got %s, expected %s",
 			properties.MasterProfile.StorageProfile, api.ManagedDisks)
@@ -479,6 +481,20 @@ func TestStorageProfile(t *testing.T) {
 		t.Fatalf("MasterProfile.StorageProfile did not have the expected configuration, got %s, expected %s",
 			properties.OrchestratorProfile.KubernetesConfig.PrivateCluster.JumpboxProfile.StorageProfile, api.ManagedDisks)
 	}
+	if !properties.AgentPoolProfiles[0].IsAvailabilitySets() {
+		t.Fatalf("AgentPoolProfile[0].AvailabilityProfile did not have the expected configuration, got %s, expected %s",
+			properties.AgentPoolProfiles[0].AvailabilityProfile, api.AvailabilitySet)
+	}
+
+	mockCS = getMockBaseContainerService("1.10.0")
+	properties = mockCS.Properties
+	properties.OrchestratorProfile.OrchestratorType = "Kubernetes"
+	setPropertiesDefaults(&mockCS, false)
+	if !properties.AgentPoolProfiles[0].IsVirtualMachineScaleSets() {
+		t.Fatalf("AgentPoolProfile[0].AvailabilityProfile did not have the expected configuration, got %s, expected %s",
+			properties.AgentPoolProfiles[0].AvailabilityProfile, api.VirtualMachineScaleSets)
+	}
+
 }
 
 func TestAgentPoolProfile(t *testing.T) {
@@ -486,7 +502,7 @@ func TestAgentPoolProfile(t *testing.T) {
 	properties := mockCS.Properties
 	properties.OrchestratorProfile.OrchestratorType = "Kubernetes"
 	properties.MasterProfile.Count = 1
-	SetPropertiesDefaults(&mockCS, false)
+	setPropertiesDefaults(&mockCS, false)
 	if properties.AgentPoolProfiles[0].ScaleSetPriority != "" {
 		t.Fatalf("AgentPoolProfiles[0].ScaleSetPriority did not have the expected configuration, got %s, expected %s",
 			properties.AgentPoolProfiles[0].ScaleSetPriority, "")
@@ -496,7 +512,7 @@ func TestAgentPoolProfile(t *testing.T) {
 			properties.AgentPoolProfiles[0].ScaleSetEvictionPolicy, "")
 	}
 	properties.AgentPoolProfiles[0].ScaleSetPriority = api.ScaleSetPriorityLow
-	SetPropertiesDefaults(&mockCS, false)
+	setPropertiesDefaults(&mockCS, false)
 	if properties.AgentPoolProfiles[0].ScaleSetEvictionPolicy != api.ScaleSetEvictionPolicyDelete {
 		t.Fatalf("AgentPoolProfile[0].ScaleSetEvictionPolicy did not have the expected configuration, got %s, expected %s",
 			properties.AgentPoolProfiles[0].ScaleSetEvictionPolicy, api.ScaleSetEvictionPolicyDelete)

@@ -252,7 +252,7 @@ func convertV20170131Properties(v20170131 *v20170131.Properties, api *Properties
 	api.ProvisioningState = ProvisioningState(v20170131.ProvisioningState)
 	if v20170131.OrchestratorProfile != nil {
 		api.OrchestratorProfile = &OrchestratorProfile{}
-		convertV20170131OrchestratorProfile(v20170131.OrchestratorProfile, api.OrchestratorProfile)
+		convertV20170131OrchestratorProfile(v20170131.OrchestratorProfile, api.OrchestratorProfile, v20170131.HasWindows())
 	}
 	if v20170131.MasterProfile != nil {
 		api.MasterProfile = &MasterProfile{}
@@ -302,9 +302,10 @@ func convertV20170131Properties(v20170131 *v20170131.Properties, api *Properties
 
 func convertV20170701Properties(v20170701 *v20170701.Properties, api *Properties) {
 	api.ProvisioningState = ProvisioningState(v20170701.ProvisioningState)
+
 	if v20170701.OrchestratorProfile != nil {
 		api.OrchestratorProfile = &OrchestratorProfile{}
-		convertV20170701OrchestratorProfile(v20170701.OrchestratorProfile, api.OrchestratorProfile)
+		convertV20170701OrchestratorProfile(v20170701.OrchestratorProfile, api.OrchestratorProfile, v20170701.HasWindows())
 	}
 	if v20170701.MasterProfile != nil {
 		api.MasterProfile = &MasterProfile{}
@@ -478,6 +479,17 @@ func convertVLabsLinuxProfile(vlabs *vlabs.LinuxProfile, api *LinuxProfile) {
 		api.Secrets = append(api.Secrets, *secret)
 	}
 	api.ScriptRootURL = vlabs.ScriptRootURL
+	if vlabs.CustomSearchDomain != nil {
+		api.CustomSearchDomain = &CustomSearchDomain{}
+		api.CustomSearchDomain.Name = vlabs.CustomSearchDomain.Name
+		api.CustomSearchDomain.RealmUser = vlabs.CustomSearchDomain.RealmUser
+		api.CustomSearchDomain.RealmPassword = vlabs.CustomSearchDomain.RealmPassword
+	}
+
+	if vlabs.CustomNodesDNS != nil {
+		api.CustomNodesDNS = &CustomNodesDNS{}
+		api.CustomNodesDNS.DNSServer = vlabs.CustomNodesDNS.DNSServer
+	}
 }
 
 func convertV20160930WindowsProfile(v20160930 *v20160930.WindowsProfile, api *WindowsProfile) {
@@ -532,16 +544,16 @@ func convertV20160330OrchestratorProfile(v20160330 *v20160330.OrchestratorProfil
 	}
 }
 
-func convertV20170131OrchestratorProfile(v20170131 *v20170131.OrchestratorProfile, api *OrchestratorProfile) {
+func convertV20170131OrchestratorProfile(v20170131 *v20170131.OrchestratorProfile, api *OrchestratorProfile, hasWindows bool) {
 	api.OrchestratorType = v20170131.OrchestratorType
 	if api.OrchestratorType == Kubernetes {
-		api.OrchestratorVersion = common.GetDefaultKubernetesVersion()
+		api.OrchestratorVersion = common.GetSupportedKubernetesVersion("", hasWindows)
 	} else if api.OrchestratorType == DCOS {
 		api.OrchestratorVersion = common.DCOSVersion1Dot9Dot0
 	}
 }
 
-func convertV20170701OrchestratorProfile(v20170701cs *v20170701.OrchestratorProfile, api *OrchestratorProfile) {
+func convertV20170701OrchestratorProfile(v20170701cs *v20170701.OrchestratorProfile, api *OrchestratorProfile, hasWindows bool) {
 	if v20170701cs.OrchestratorType == v20170701.DockerCE {
 		api.OrchestratorType = SwarmMode
 	} else {
@@ -550,7 +562,7 @@ func convertV20170701OrchestratorProfile(v20170701cs *v20170701.OrchestratorProf
 
 	switch api.OrchestratorType {
 	case Kubernetes:
-		api.OrchestratorVersion = common.GetSupportedKubernetesVersion(v20170701cs.OrchestratorVersion)
+		api.OrchestratorVersion = common.GetSupportedKubernetesVersion(v20170701cs.OrchestratorVersion, hasWindows)
 	case DCOS:
 		switch v20170701cs.OrchestratorVersion {
 		case common.DCOSVersion1Dot10Dot0, common.DCOSVersion1Dot9Dot0, common.DCOSVersion1Dot8Dot8:

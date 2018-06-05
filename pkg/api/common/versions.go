@@ -2,6 +2,7 @@ package common
 
 import (
 	"fmt"
+	"sort"
 	"strings"
 
 	"github.com/Masterminds/semver"
@@ -47,6 +48,7 @@ var AllKubernetesSupportedVersions = map[string]bool{
 	"1.9.5":          true,
 	"1.9.6":          true,
 	"1.9.7":          true,
+	"1.9.8":          true,
 	"1.10.0-beta.2":  true,
 	"1.10.0-beta.4":  true,
 	"1.10.0-rc.1":    true,
@@ -55,6 +57,8 @@ var AllKubernetesSupportedVersions = map[string]bool{
 	"1.10.2":         true,
 	"1.10.3":         true,
 	"1.11.0-alpha.1": true,
+	"1.11.0-alpha.2": true,
+	"1.11.0-beta.1":  true,
 }
 
 // GetDefaultKubernetesVersion returns the default Kubernetes version, that is the latest patch of the default release
@@ -68,11 +72,20 @@ func GetDefaultKubernetesVersionWindows() string {
 }
 
 // GetSupportedKubernetesVersion verifies that a passed-in version string is supported, or returns a default version string if not
-func GetSupportedKubernetesVersion(version string) string {
-	if k8sVersion := version; AllKubernetesSupportedVersions[k8sVersion] {
-		return k8sVersion
+func GetSupportedKubernetesVersion(version string, hasWindows bool) string {
+	var k8sVersion string
+	if hasWindows {
+		k8sVersion = GetDefaultKubernetesVersionWindows()
+		if AllKubernetesWindowsSupportedVersions[version] {
+			k8sVersion = version
+		}
+	} else {
+		k8sVersion = GetDefaultKubernetesVersion()
+		if AllKubernetesSupportedVersions[version] {
+			k8sVersion = version
+		}
 	}
-	return GetDefaultKubernetesVersion()
+	return k8sVersion
 }
 
 // GetAllSupportedKubernetesVersions returns a slice of all supported Kubernetes versions
@@ -83,6 +96,9 @@ func GetAllSupportedKubernetesVersions() []string {
 			versions = append(versions, ver)
 		}
 	}
+	sort.Slice(versions, func(i, j int) bool {
+		return IsKubernetesVersionGe(versions[j], versions[i])
+	})
 	return versions
 }
 
@@ -211,7 +227,8 @@ func getAllKubernetesWindowsSupportedVersionsMap() map[string]bool {
 		"1.10.0-beta.2",
 		"1.10.0-beta.4",
 		"1.10.0-rc.1",
-		"1.11.0-alpha.1"} {
+		"1.11.0-alpha.1",
+		"1.11.0-alpha.2"} {
 		ret[version] = false
 	}
 	return ret
@@ -225,6 +242,9 @@ func GetAllSupportedKubernetesVersionsWindows() []string {
 			versions = append(versions, ver)
 		}
 	}
+	sort.Slice(versions, func(i, j int) bool {
+		return IsKubernetesVersionGe(versions[j], versions[i])
+	})
 	return versions
 }
 
@@ -248,13 +268,13 @@ func GetSupportedVersions(orchType string, hasWindows bool) (versions []string, 
 }
 
 //GetValidPatchVersion gets the current valid patch version for the minor version of the passed in version
-func GetValidPatchVersion(orchType, orchVer string) string {
+func GetValidPatchVersion(orchType, orchVer string, hasWindows bool) string {
 	if orchVer == "" {
 		return RationalizeReleaseAndVersion(
 			orchType,
 			"",
 			"",
-			false)
+			hasWindows)
 	}
 
 	// check if the current version is valid, this allows us to have multiple supported patch versions in the future if we need it
@@ -262,7 +282,7 @@ func GetValidPatchVersion(orchType, orchVer string) string {
 		orchType,
 		"",
 		orchVer,
-		false)
+		hasWindows)
 
 	if version == "" {
 		sv, err := semver.NewVersion(orchVer)
@@ -275,7 +295,7 @@ func GetValidPatchVersion(orchType, orchVer string) string {
 			orchType,
 			sr,
 			"",
-			false)
+			hasWindows)
 	}
 	return version
 }

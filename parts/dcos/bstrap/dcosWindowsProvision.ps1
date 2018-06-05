@@ -6,7 +6,7 @@
         Provisions VM as a Windows bootstrap node.
 
      Invoke by:
-       
+
 #>
 
 [CmdletBinding(DefaultParameterSetName="Standard")]

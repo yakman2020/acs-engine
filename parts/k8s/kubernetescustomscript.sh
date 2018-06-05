@@ -24,6 +24,8 @@ ERR_K8S_RUNNING_TIMEOUT=30 # Timeout waiting for k8s cluster to be healthy
 ERR_K8S_DOWNLOAD_TIMEOUT=31 # Timeout waiting for Kubernetes download(s)
 ERR_KUBECTL_NOT_FOUND=32 # kubectl client binary not found on local disk
 ERR_CNI_DOWNLOAD_TIMEOUT=41 # Timeout waiting for CNI download(s)
+ERR_OUTBOUND_CONN_FAIL=50 # Unable to establish outbound connection
+ERR_CUSTOM_SEARCH_DOMAINS_FAIL=80 # Unable to configure custom search domains
 ERR_APT_DAILY_TIMEOUT=98 # Timeout waiting for apt daily updates
 ERR_APT_UPDATE_TIMEOUT=99 # Timeout waiting for apt-get update to complete
 
@@ -34,6 +36,7 @@ COREOS_OS_NAME="COREOS"
 KUBECTL=/usr/local/bin/kubectl
 DOCKER=/usr/bin/docker
 CNI_BIN_DIR=/opt/cni/bin
+CUSTOM_SEARCH_DOMAIN_SCRIPT=/opt/azure/containers/setup-custom-search-domains.sh
 
 set +x
 ETCD_PEER_CERT=$(echo ${ETCD_PEER_CERTIFICATES} | cut -d'[' -f 2 | cut -d']' -f 1 | cut -d',' -f $((${MASTER_INDEX}+1)))
@@ -51,8 +54,27 @@ else
     REBOOTREQUIRED=false
 fi
 
+function testOutboundConnection() {
+    retrycmd_if_failure 120 1 20 nc -v 8.8.8.8 53 || retrycmd_if_failure 120 1 20 nc -v 8.8.4.4 53 || exit $ERR_OUTBOUND_CONN_FAIL
+}
+
 function waitForCloudInit() {
     wait_for_file 900 1 /var/log/azure/cloud-init.complete || exit $ERR_CLOUD_INIT_TIMEOUT
+}
+
+function systemctlEnableAndStart() {
+    systemctl_restart 100 5 30 $1
+    RESTART_STATUS=$?
+    systemctl status $1 --no-pager -l > /var/log/azure/$1-status.log
+    if [ $RESTART_STATUS -ne 0 ]; then
+        echo "$1 could not be started"
+        exit $ERR_SYSTEMCTL_START_FAIL
+    fi
+    retrycmd_if_failure 10 5 3 systemctl enable $1
+    if [ $? -ne 0 ]; then
+        echo "$1 could not be enabled by systemctl"
+        exit $ERR_SYSTEMCTL_ENABLE_FAIL
+    fi
 }
 
 function installEtcd() {
@@ -119,8 +141,15 @@ function installEtcd() {
     fi
 
     /opt/azure/containers/mountetcd.sh || exit $ERR_ETCD_VOL_MOUNT_FAIL
-    systemctl_restart 10 5 30 etcd || exit $ERR_ETCD_START_TIMEOUT
-    MEMBER="$(sudo etcdctl member list | grep -E ${MASTER_VM_NAME} | cut -d':' -f 1)"
+    systemctlEnableAndStart etcd
+    for i in $(seq 1 600); do
+        MEMBER="$(sudo etcdctl member list | grep -E ${MASTER_VM_NAME} | cut -d':' -f 1)"
+        if [ "$MEMBER" != "" ]; then
+            break
+        else
+            sleep 1
+        fi
+    done
     retrycmd_if_failure 10 1 5 sudo etcdctl member update $MEMBER ${ETCD_PEER_URL} || exit $ERR_ETCD_CONFIG_FAIL
 }
 
@@ -237,21 +266,6 @@ function configNetworkPlugin() {
     fi
 }
 
-function systemctlEnableAndStart() {
-    systemctl_restart 20 1 10 $1
-    RESTART_STATUS=$?
-    systemctl status $1 --no-pager -l > /var/log/azure/$1-status.log
-    if [ $RESTART_STATUS -ne 0 ]; then
-        echo "$1 could not be started"
-        exit $ERR_SYSTEMCTL_START_FAIL
-    fi
-    retrycmd_if_failure 10 1 3 systemctl enable $1
-    if [ $? -ne 0 ]; then
-        echo "$1 could not be enabled by systemctl"
-        exit $ERR_SYSTEMCTL_ENABLE_FAIL
-    fi
-}
-
 function installClearContainersRuntime() {
 	# Add Clear Containers repository key
 	echo "Adding Clear Containers repository key..."
@@ -339,7 +353,7 @@ function ensureKubelet() {
 }
 
 function extractHyperkube(){
-    retrycmd_if_failure 100 1 60 docker pull $HYPERKUBE_URL || $ERR_K8S_DOWNLOAD_TIMEOUT
+    retrycmd_if_failure 100 1 60 docker pull $HYPERKUBE_URL || exit $ERR_K8S_DOWNLOAD_TIMEOUT
     systemctlEnableAndStart hyperkube-extract
 }
 
@@ -368,7 +382,7 @@ function ensureK8sControlPlane() {
 }
 
 function ensureEtcd() {
-    retrycmd_if_failure 100 1 10 curl --cacert /etc/kubernetes/certs/ca.crt --cert /etc/kubernetes/certs/etcdclient.crt --key /etc/kubernetes/certs/etcdclient.key --retry 5 --retry-delay 10 --retry-max-time 10 --max-time 60 ${ETCD_CLIENT_URL}/v2/machines || exit $ERR_ETCD_RUNNING_TIMEOUT
+    retrycmd_if_failure 120 5 10 curl --cacert /etc/kubernetes/certs/ca.crt --cert /etc/kubernetes/certs/etcdclient.crt --key /etc/kubernetes/certs/etcdclient.key ${ETCD_CLIENT_URL}/v2/machines || exit $ERR_ETCD_RUNNING_TIMEOUT
 }
 
 function writeKubeConfig() {
@@ -455,6 +469,8 @@ configAddons() {
     fi
 }
 
+testOutboundConnection
+
 if [[ $OS == $UBUNTU_OS_NAME ]]; then
     echo `date`,`hostname`, apt-get_update_begin>>/opt/m
     apt_get_update || exit $ERR_APT_INSTALL_TIMEOUT
@@ -471,6 +487,10 @@ if [[ ! -z "${MASTER_NODE}" ]]; then
     installEtcd
 else
     echo "skipping master node provision operations, this is an agent node"
+fi
+
+if [ -f $CUSTOM_SEARCH_DOMAIN_SCRIPT ]; then
+    $CUSTOM_SEARCH_DOMAIN_SCRIPT > /opt/azure/containers/setup-custom-search-domain.log 2>&1 || exit $ERR_CUSTOM_SEARCH_DOMAINS_FAIL
 fi
 
 installDocker

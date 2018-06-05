@@ -2,6 +2,7 @@ package api
 
 import (
 	neturl "net/url"
+	"strings"
 
 	"github.com/Azure/acs-engine/pkg/api/agentPoolOnlyApi/v20170831"
 	"github.com/Azure/acs-engine/pkg/api/agentPoolOnlyApi/v20180331"
@@ -130,14 +131,28 @@ type LinuxProfile struct {
 	SSH           struct {
 		PublicKeys []PublicKey `json:"publicKeys"`
 	} `json:"ssh"`
-	Secrets       []KeyVaultSecrets `json:"secrets,omitempty"`
-	Distro        Distro            `json:"distro,omitempty"`
-	ScriptRootURL string            `json:"scriptroot,omitempty"`
+	Secrets            []KeyVaultSecrets   `json:"secrets,omitempty"`
+	Distro             Distro              `json:"distro,omitempty"`
+	ScriptRootURL      string              `json:"scriptroot,omitempty"`
+	CustomSearchDomain *CustomSearchDomain `json:"customSearchDomain,omitempty"`
+	CustomNodesDNS     *CustomNodesDNS     `json:"CustomNodesDNS,omitempty"`
 }
 
 // PublicKey represents an SSH key for LinuxProfile
 type PublicKey struct {
 	KeyData string `json:"keyData"`
+}
+
+// CustomSearchDomain represents the Search Domain when the custom vnet has a windows server DNS as a nameserver.
+type CustomSearchDomain struct {
+	Name          string `json:"name,omitempty"`
+	RealmUser     string `json:"realmUser,omitempty"`
+	RealmPassword string `json:"realmPassword,omitempty"`
+}
+
+// CustomNodesDNS represents the Search Domain when the custom vnet for a custom DNS as a nameserver.
+type CustomNodesDNS struct {
+	DNSServer string `json:"dnsServer,omitempty"`
 }
 
 // WindowsProfile represents the windows parameters passed to the cluster
@@ -759,6 +774,26 @@ func (l *LinuxProfile) HasSecrets() bool {
 	return len(l.Secrets) > 0
 }
 
+// HasSearchDomain returns true if the customer specified secrets to install
+func (l *LinuxProfile) HasSearchDomain() bool {
+	if l.CustomSearchDomain != nil {
+		if l.CustomSearchDomain.Name != "" && l.CustomSearchDomain.RealmPassword != "" && l.CustomSearchDomain.RealmUser != "" {
+			return true
+		}
+	}
+	return false
+}
+
+// HasCustomNodesDNS returns true if the customer specified a dns server
+func (l *LinuxProfile) HasCustomNodesDNS() bool {
+	if l.CustomNodesDNS != nil {
+		if l.CustomNodesDNS.DNSServer != "" {
+			return true
+		}
+	}
+	return false
+}
+
 // IsSwarmMode returns true if this template is for Swarm Mode orchestrator
 func (o *OrchestratorProfile) IsSwarmMode() bool {
 	return o.OrchestratorType == SwarmMode
@@ -872,6 +907,39 @@ func (k *KubernetesConfig) IsDashboardEnabled() bool {
 		}
 	}
 	return dashboardAddon.IsEnabled(DefaultDashboardAddonEnabled)
+}
+
+func isNSeriesSKU(p *Properties) bool {
+	for _, profile := range p.AgentPoolProfiles {
+		if strings.Contains(profile.VMSize, "Standard_N") {
+			return true
+		}
+	}
+	return false
+}
+
+// IsNVIDIADevicePluginEnabled checks if the NVIDIA Device Plugin addon is enabled
+// It is enabled by default if agents contain a GPU and Kubernetes version is >= 1.10.0
+func (p *Properties) IsNVIDIADevicePluginEnabled() bool {
+	var nvidiaDevicePluginAddon KubernetesAddon
+	k := p.OrchestratorProfile.KubernetesConfig
+	o := p.OrchestratorProfile
+	for i := range k.Addons {
+		if k.Addons[i].Name == DefaultNVIDIADevicePluginAddonName {
+			nvidiaDevicePluginAddon = k.Addons[i]
+		}
+	}
+
+	var addonEnabled bool
+	if nvidiaDevicePluginAddon.Enabled != nil && !*nvidiaDevicePluginAddon.Enabled {
+		addonEnabled = false
+	} else if isNSeriesSKU(p) && common.IsKubernetesVersionGe(o.OrchestratorVersion, "1.10.0") {
+		addonEnabled = true
+	} else {
+		addonEnabled = false
+	}
+
+	return nvidiaDevicePluginAddon.IsEnabled(addonEnabled)
 }
 
 // IsReschedulerEnabled checks if the rescheduler addon is enabled

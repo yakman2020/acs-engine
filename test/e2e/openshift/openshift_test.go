@@ -137,7 +137,11 @@ var _ = Describe("Azure Container Cluster using the OpenShift Orchestrator", fun
 				false)
 		}
 		expectedVersionRationalized := strings.Split(expectedVersion, "-")[0] // to account for -alpha and -beta suffixes
-		Expect(version).To(Equal("v" + expectedVersionRationalized))
+
+		// skip unstable test as the version will constantly be changing
+		if expectedVersionRationalized != "unstable" {
+			Expect(version).To(Equal("v" + expectedVersionRationalized))
+		}
 	})
 
 	It("should have router running", func() {
@@ -152,11 +156,14 @@ var _ = Describe("Azure Container Cluster using the OpenShift Orchestrator", fun
 		Expect(running).To(Equal(true))
 	})
 
+	It("should have registry-console running", func() {
+		running, err := pod.WaitOnReady("registry-console", "default", 3, 30*time.Second, cfg.Timeout)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(running).To(Equal(true))
+	})
+
 	It("should deploy a sample app and access it via a route", func() {
-		err := util.CreateFromTemplate("nginx-example", "openshift", "default")
-		if err != nil && strings.Contains(err.Error(), "AlreadyExists") {
-			err = nil
-		}
+		err := util.ApplyFromTemplate("nginx-example", "openshift", "default")
 		Expect(err).NotTo(HaveOccurred())
 		Expect(util.WaitForDeploymentConfig("nginx-example", "default")).NotTo(HaveOccurred())
 		host, err := util.GetHost("nginx-example", "default")
