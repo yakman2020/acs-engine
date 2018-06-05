@@ -212,7 +212,7 @@
                   "autoUpgradeMinorVersion": true,
                   "settings": {
 {{if HasBootstrap}}
-                     "commandToExecute": "[variables('{{.Name}}windowsAgent2CustomScript')]"
+                     "commandToExecute": "[variables('windowsAgent2CustomScript')]"
 {{else}}
                      "commandToExecute": "[variables('{{.Name}}windowsAgentCustomScript')]"
 {{end}}
