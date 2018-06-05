@@ -60,6 +60,7 @@ const (
 	dcos2BootstrapWindowsProvision = "dcos/bstrap/bootstrapWindowsProvision.ps1"
 	dcos2CustomData1110            = "dcos/bstrap/dcos1.11.0.customdata.t"
 	dcos2CustomData1112            = "dcos/bstrap/dcos1.11.2.customdata.t"
+	dcos2WindowsProvision          = "dcos/bstrap/dcosWindowsProvision.ps1"
 )
 
 const (
@@ -1268,14 +1269,25 @@ func (t *TemplateGenerator) getTemplateFuncMap(cs *api.ContainerService) templat
 				agentPreprovisionExtension += "\n"
 				agentPreprovisionExtension += makeAgentExtensionScriptCommands(cs, profile)
 			}
-			b, err := Asset(dcosWindowsProvision)
+			scriptname := dcos2WindowsProvision
+			if cs.Properties.OrchestratorProfile.DcosConfig == nil || cs.Properties.OrchestratorProfile.DcosConfig.BootstrapProfile == nil {
+				scriptname = dcosWindowsProvision
+			}
+			b, err := Asset(scriptname)
 			if err != nil {
 				// this should never happen and this is a bug
 				panic(fmt.Sprintf("BUG: %s", err.Error()))
 			}
+			var agentRoleName string
+			if len(profile.Ports) > 0 {
+				agentRoleName = "slave_public"
+			} else {
+				agentRoleName = "slave"
+			}
 			// translate the parameters
 			csStr := string(b)
 			csStr = strings.Replace(csStr, "PREPROVISION_EXTENSION", agentPreprovisionExtension, -1)
+			csStr = strings.Replace(csStr, "ROLENAME", agentRoleName, -1)
 			csStr = strings.Replace(csStr, "\r\n", "\n", -1)
 			str := getBase64CustomScriptFromStr(csStr)
 			return fmt.Sprintf("\"customData\": \"%s\"", str)
@@ -2549,11 +2561,7 @@ func getDCOSAgentProvisionScript(profile *api.AgentPoolProfile, orchProfile *api
 	// add the provision script
 	scriptname := dcos2Provision
 	if orchProfile.DcosConfig == nil || orchProfile.DcosConfig.BootstrapProfile == nil {
-		if profile.OSType == api.Windows {
-			scriptname = dcosWindowsProvision
-		} else {
-			scriptname = dcosProvision
-		}
+		scriptname = dcosProvision
 	}
 
 	bp, err := Asset(scriptname)

@@ -19,10 +19,7 @@ param(
     $BootstrapIP
 )
 
-$global:BootstrapInstallDir = "C:\AzureData"
-
 filter Timestamp {"[$(Get-Date -Format o)] $_"}
-
 
 function Write-Log($message)
 {
@@ -113,7 +110,7 @@ try {
         throw "Failed to build docker image"
     }
 
-    & docker.exe run --rm -d --network customnat -p 9999:80 -v C:/temp/genconf/serve/:c:/nginx/html:ro nginx:1803
+    & docker.exe run --rm -d --network customnat -p 8086:80 -v C:/temp/genconf/serve/:c:/nginx/html:ro nginx:1803
     if ($LASTEXITCODE -ne 0) {
         throw "Failed to run docker image"
     }
