@@ -28,6 +28,15 @@ function Write-Log($message)
 
 try {
     Write-Log "Setting up Windows Agent node. BootstrapIP:$BootstrapIP"
+    Write-Log "Current user is $env:username"
+
+    # prime the credential cache
+
+    $unattend_txt = Get-Content "c:\unattend.xml"
+    $unattend =  [System.Xml.XmlDocument] $unattend_txt
+    $password = $unattend.unattend.settings.component.UserAccounts.AdministratorPassword.Value
+
+    & cmdkey /generic:"dcos/app" /user:"$env:userdomain\$env:username" /pass:"$password"
 
     $dcosInstallUrl = "http://${BootstrapIP}:8086/dcos_install.ps1"
     & curl.exe $dcosInstallUrl -o $global:BootstrapInstallDir\dcos_install.ps1
